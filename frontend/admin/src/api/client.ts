@@ -14,21 +14,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const text = await res.text()
     throw new Error(text || res.statusText)
   }
-  if (res.status === 204) return undefined as T
+  if (res.status === 204 || res.status === 200 && res.headers.get('content-length') === '0') return undefined as T
   return res.json()
 }
 
 export const api = {
   register: (email: string, password: string, name: string) =>
-    request<{ token: string; merchant: Merchant }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, name }),
-    }),
+    request<{ token: string; merchant: Merchant }>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
   login: (email: string, password: string) =>
-    request<{ token: string; merchant: Merchant }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
+    request<{ token: string; merchant: Merchant }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: () => request<Merchant>('/me'),
 
   stores: {
@@ -51,47 +45,42 @@ export const api = {
       request<void>(`/stores/${storeId}/products/${id}`, { method: 'DELETE' }),
   },
 
+  orders: {
+    list: (storeId: string) => request<Order[]>(`/stores/${storeId}/orders`),
+    updateStatus: (storeId: string, id: string, status: string) =>
+      request<void>(`/stores/${storeId}/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  },
+
+  analytics: {
+    stats: (storeId: string) => request<StoreStats>(`/stores/${storeId}/analytics`),
+  },
+
   upload: {
     presign: (ext = 'jpg') =>
       request<{ upload_url: string; public_url: string; key: string }>(`/upload/presign?ext=${ext}`),
   },
 }
 
-export interface Merchant {
-  id: string
-  email: string
-  name: string
-  created_at: string
-}
+export interface Merchant { id: string; email: string; name: string; created_at: string }
 
 export interface Store {
-  id: string
-  merchant_id: string
-  name: string
-  slug: string
-  logo_url: string | null
-  plan: string
-  trial_ends_at: string
-  created_at: string
+  id: string; merchant_id: string; name: string; slug: string
+  logo_url: string | null; plan: string; trial_ends_at: string; created_at: string
 }
 
 export interface Product {
-  id: string
-  store_id: string
-  name: string
-  description: string | null
-  price: number
-  stock: number
-  image_url: string | null
-  published: boolean
-  created_at: string
+  id: string; store_id: string; name: string; description: string | null
+  price: number; stock: number; image_url: string | null; published: boolean; created_at: string
 }
 
 export interface ProductInput {
-  name: string
-  description?: string
-  price: number
-  stock: number
-  image_url?: string
-  published: boolean
+  name: string; description?: string; price: number; stock: number; image_url?: string; published: boolean
 }
+
+export interface Order {
+  id: string; store_id: string; customer_email: string; customer_name: string
+  customer_phone: string | null; shipping_address: string; total: number
+  status: string; payment_provider: string | null; created_at: string
+}
+
+export interface StoreStats { revenue: number; order_count: number; paid_count: number }
