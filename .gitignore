@@ -1,0 +1,22 @@
+# Go
+backend/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Frontend
+frontend/admin/node_modules/
+frontend/admin/dist/
+frontend/admin/.env
+
+# Env files
+.env
+*.env.local
+
+# OS
+.DS_Store
+Thumbs.db
