@@ -4,6 +4,8 @@ import DashboardPage from './pages/DashboardPage'
 import StoreSetupPage from './pages/StoreSetupPage'
 import ProductsPage from './pages/ProductsPage'
 import ProductEditPage from './pages/ProductEditPage'
+import OrdersPage from './pages/OrdersPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import { useAuth } from './hooks/useAuth'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -21,6 +23,8 @@ export default function App() {
         <Route path="/stores/:storeId/products" element={<PrivateRoute><ProductsPage /></PrivateRoute>} />
         <Route path="/stores/:storeId/products/new" element={<PrivateRoute><ProductEditPage /></PrivateRoute>} />
         <Route path="/stores/:storeId/products/:productId/edit" element={<PrivateRoute><ProductEditPage /></PrivateRoute>} />
+        <Route path="/stores/:storeId/orders" element={<PrivateRoute><OrdersPage /></PrivateRoute>} />
+        <Route path="/stores/:storeId/analytics" element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

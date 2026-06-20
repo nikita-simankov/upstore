@@ -36,16 +36,17 @@ export default function ProductsPage() {
           <span className="text-gray-300">/</span>
           <span className="text-sm font-medium text-gray-900">{store?.name}</span>
         </div>
-        <button onClick={() => { clearToken(); navigate('/login') }} className="text-sm text-gray-500 hover:text-gray-900">Выйти</button>
+        <div className="flex items-center gap-3">
+          <Link to={`/stores/${storeId}/orders`} className="text-sm text-gray-500 hover:text-gray-900">Заказы</Link>
+          <Link to={`/stores/${storeId}/analytics`} className="text-sm text-gray-500 hover:text-gray-900">Аналитика</Link>
+          <button onClick={() => { clearToken(); navigate('/login') }} className="text-sm text-gray-500 hover:text-gray-900">Выйти</button>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-xl font-semibold text-gray-900">Товары</h2>
-          <Link
-            to={`/stores/${storeId}/products/new`}
-            className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-          >
+          <Link to={`/stores/${storeId}/products/new`} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
             + Добавить товар
           </Link>
         </div>
@@ -55,10 +56,7 @@ export default function ProductsPage() {
         ) : products.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 flex flex-col items-center justify-center py-20 text-center">
             <p className="text-gray-400 text-sm">Товаров пока нет</p>
-            <Link
-              to={`/stores/${storeId}/products/new`}
-              className="mt-4 bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-            >
+            <Link to={`/stores/${storeId}/products/new`} className="mt-4 bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
               Добавить первый товар
             </Link>
           </div>
@@ -88,9 +86,7 @@ export default function ProductsPage() {
                     <td className="px-5 py-4 text-sm text-gray-600">{formatPrice(p.price)}</td>
                     <td className="px-5 py-4 text-sm text-gray-600">{p.stock}</td>
                     <td className="px-5 py-4">
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        p.published ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
+                      <span className={`text-xs px-2 py-1 rounded-full ${p.published ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                         {p.published ? 'Опубликован' : 'Черновик'}
                       </span>
                     </td>
