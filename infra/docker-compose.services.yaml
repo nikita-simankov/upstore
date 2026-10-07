@@ -1,0 +1,42 @@
+name: upstore-services
+
+services:
+  users:
+    build:
+      context: ..
+      dockerfile: services/users/dockerfile
+      args:
+        SERVICE_NAME: users
+        SERVICE_PATH: services/users
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
+    image: upstore/users:${BUILD_VERSION:-dev}
+    restart: unless-stopped
+    container_name: upstore-users
+
+    environment:
+      ENVIRONMENT: development
+      HTTP_PORT: 9090
+      GRPC_PORT: 50051
+      REDIS_URL: "redis://valkey:6379"
+      RABBITMQ_URL: "amqp://upstore:dev_only_password@rabbitmq:5672/"
+      DATABASE_URL: "postgres://upstore_add:upstore_owner_pass@postgres:5432/upstore?sslmode=disable"
+
+    ports:
+      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:50051:50051"
+
+    depends_on:
+      valkey:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+    networks:
+      - upstore
+
+networks:
+  upstore:
+    name: upstore
+    external: true

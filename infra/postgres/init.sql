@@ -1,0 +1,17 @@
+CREATE EXTENSION IF NOT EXISTS "pg_trgm"; 
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "unaccent";
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'upstore_app') THEN
+        CREATE ROLE upstore_app LOGIN PASSWORD 'upstore_owner_pass'
+            NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+    END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE upstore TO upstore_app;
+GRANT USAGE ON SCHEMA public TO upstore_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public 
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO upstore_app;
