@@ -3,5 +3,6 @@ go 1.26.3
 use (
 	./proto/generated
 	./services/accounts
+	./services/profiles
 	./shared
 )

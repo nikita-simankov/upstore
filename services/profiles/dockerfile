@@ -1,7 +1,7 @@
 FROM golang:1.26.3-alpine AS builder
 
-ARG SERVICE_NAME=accounts
-ARG SERVICE_PATH=services/accounts
+ARG SERVICE_NAME=profiles
+ARG SERVICE_PATH=services/profiles
 ARG BUILD_VERSION=dev
 
 RUN apk add --no-cache git ca-certificates tzdata
@@ -13,7 +13,7 @@ COPY shared/go.mod shared/go.sum* ./shared/
 COPY proto/generated/go.mod proto/generated/go.sum* ./proto/generated/
 COPY services/${SERVICE_NAME}/go.mod services/${SERVICE_NAME}/go.sum* ./services/${SERVICE_NAME}/
 # go.work lists every service module, so go work sync needs each go.mod present.
-COPY services/profiles/go.mod services/profiles/go.sum* ./services/profiles/
+COPY services/accounts/go.mod services/accounts/go.sum* ./services/accounts/
 
 RUN go work sync
 
@@ -32,8 +32,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM alpine:3.19 AS runtime
 
-ARG SERVICE_NAME=accounts
-ARG SERVICE_PATH=services/accounts
+ARG SERVICE_NAME=profiles
+ARG SERVICE_PATH=services/profiles
 ARG BUILD_VERSION=dev
 
 RUN apk add --no-cache ca-certificates tzdata
@@ -48,10 +48,5 @@ COPY --from=builder --chown=upstore:upstore /build/bin/${SERVICE_NAME} ./app
 COPY --from=builder --chown=upstore:upstore /build/services/${SERVICE_NAME}/migrations ./migrations
 
 USER upstore
-
-EXPOSE 50051 9090
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:9090/health || exit 1
 
 ENTRYPOINT ["./app"]
