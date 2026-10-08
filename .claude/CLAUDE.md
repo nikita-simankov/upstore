@@ -28,7 +28,7 @@ Merchants see their money like a wallet, with balance, upcoming payouts and ever
 
 Upstore is a microservices-based backend platform. The project uses:
 - **Language:** Go
-- **Architecture:** Microservices (users service, etc.)
+- **Architecture:** Microservices (accounts and profiles services, etc.)
 - **Database:** PostgreSQL, with goose migrations and sqlc for typed queries
 - **Message Queue:** RabbitMQ
 - **Cache:** Redis
@@ -147,8 +147,8 @@ shared/validate/
 
 ## 🔧 Current Services Using Validation
 
-### users service
-**Config File:** `services/users/internal/config/config.go`
+### accounts service
+**Config File:** `services/accounts/internal/config/config.go`
 **Currently Using:** v1 validation (needs migration to v2)
 **Fields:**
 - HTTPPort (int, 1-65535)
@@ -299,8 +299,8 @@ go test ./shared/validate -cover
 ## 🔄 Next Steps
 
 ### Immediate (Next PR/Commit)
-1. **Migrate users service config to v2**
-   - Update `services/users/internal/config/config.go`
+1. **Migrate accounts service config to v2**
+   - Update `services/accounts/internal/config/config.go`
    - Handle error return from Load()
    - Add config validation tests
 

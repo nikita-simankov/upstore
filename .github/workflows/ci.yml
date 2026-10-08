@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         # proto/generated has no Go packages yet; add it here once it does.
-        module: [shared, services/users]
+        module: [shared, services/accounts]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +43,7 @@ jobs:
         run: go test -race -cover ./...
 
   docker-build:
-    name: docker build (users)
+    name: docker build (accounts)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +55,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: services/users/dockerfile
+          file: services/accounts/dockerfile
           push: false
           build-args: |
-            SERVICE_NAME=users
-            SERVICE_PATH=services/users
+            SERVICE_NAME=accounts
+            SERVICE_PATH=services/accounts
             BUILD_VERSION=${{ github.sha }}

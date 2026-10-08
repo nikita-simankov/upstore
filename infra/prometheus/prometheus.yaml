@@ -10,6 +10,6 @@ scrape_configs:
   - job_name: "docker-services"
     dns_sd_configs:
       - names:
-          - "users"
+          - "accounts"
         type: A
         port: 9090

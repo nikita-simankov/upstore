@@ -1,17 +1,17 @@
 name: upstore-services
 
 services:
-  users:
+  accounts:
     build:
       context: ..
-      dockerfile: services/users/dockerfile
+      dockerfile: services/accounts/dockerfile
       args:
-        SERVICE_NAME: users
-        SERVICE_PATH: services/users
+        SERVICE_NAME: accounts
+        SERVICE_PATH: services/accounts
         BUILD_VERSION: ${BUILD_VERSION:-dev}
-    image: upstore/users:${BUILD_VERSION:-dev}
+    image: upstore/accounts:${BUILD_VERSION:-dev}
     restart: unless-stopped
-    container_name: upstore-users
+    container_name: upstore-accounts
 
     environment:
       ENVIRONMENT: development

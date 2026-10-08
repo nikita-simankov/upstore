@@ -1,7 +1,7 @@
 FROM golang:1.26.3-alpine AS builder
 
-ARG SERVICE_NAME=users
-ARG SERVICE_PATH=services/users
+ARG SERVICE_NAME=accounts
+ARG SERVICE_PATH=services/accounts
 ARG BUILD_VERSION=dev
 
 RUN apk add --no-cache git ca-certificates tzdata
@@ -30,8 +30,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM alpine:3.19 AS runtime
 
-ARG SERVICE_NAME=users
-ARG SERVICE_PATH=services/users
+ARG SERVICE_NAME=accounts
+ARG SERVICE_PATH=services/accounts
 ARG BUILD_VERSION=dev
 
 RUN apk add --no-cache ca-certificates tzdata

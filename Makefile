@@ -47,14 +47,14 @@ compose-services-build:
 
 sqlc-generate:
 	@echo "[make:sqlc-generate] Generating database code..."
-	sqlc generate -f services/users/sqlc.yaml
+	sqlc generate -f services/accounts/sqlc.yaml
 	@echo "[make:sqlc-generate] Database code generation complete"
 
 
-USERS_DATABASE_URL ?= postgres://upstore_owner:upstore_owner_pass@127.0.0.1:5432/upstore?sslmode=disable
+ACCOUNTS_DATABASE_URL ?= postgres://upstore_owner:upstore_owner_pass@127.0.0.1:5432/upstore?sslmode=disable
 
 migrate-up:
-	goose -dir services/users/migrations postgres "$(USERS_DATABASE_URL)" up
+	goose -dir services/accounts/migrations postgres "$(ACCOUNTS_DATABASE_URL)" up
 
 migrate-down:
-	goose -dir services/users/migrations postgres "$(USERS_DATABASE_URL)" down
+	goose -dir services/accounts/migrations postgres "$(ACCOUNTS_DATABASE_URL)" down
