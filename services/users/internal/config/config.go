@@ -1,15 +1,13 @@
 package config
 
 import (
-	"strings"
-
 	"github.com/nikita-simankov/upstore/shared/env"
 	"github.com/nikita-simankov/upstore/shared/validate"
 )
 
 type Config struct {
-	HTTPPort    string
-	GRPCPort    string
+	HTTPPort    int
+	GRPCPort    int
 	LogLevel    string
 	RedisURL    string
 	Environment string
@@ -17,48 +15,55 @@ type Config struct {
 	DatabaseURL string
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPPort: validate.
-			String("HTTP_PORT").
-			Required().
-			Refine(func(port string) bool {
-				return strings.HasPrefix(port, ":")
-			}, "must start with ':'").
-			Validate(env.Env("HTTP_PORT", ":9090")),
-		GRPCPort: validate.
-			String("GRPC_PORT").
-			Required().
-			Refine(func(port string) bool {
-				return strings.HasPrefix(port, ":")
-			}, "must start with ':'").
-			Validate(env.Env("GRPC_PORT", ":50051")),
-		LogLevel: validate.
-			String("LOG_LEVEL").
-			Required().
-			OneOf("debug", "info", "warn", "error").
-			Validate(env.Env("LOG_LEVEL", "debug")),
-		RedisURL: validate.
-			String("REDIS_URL").
-			Required().
-			RedisURL().
-			Validate(env.Env("REDIS_URL", "redis://valkey:6379")),
-		Environment: validate.
-			String("ENVIRONMENT").
-			Required().
-			OneOf("development", "production", "staging").
-			Validate(env.Env("ENVIRONMENT", "development")),
-		RabbitMQURL: validate.
-			String("RABBITMQ_URL").
-			Required().
-			RabbitMQURL().
-			Validate(env.Env("RABBITMQ_URL", "amqp://admin:password@rabbitmq:5672/")),
-		DatabaseURL: validate.
-			String("DATABASE_URL").
-			Required().
-			PostgresURL().
-			Validate(env.Env("DATABASE_URL", "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable")),
+		LogLevel:    env.Env("LOG_LEVEL", "debug"),
+		RedisURL:    env.Env("REDIS_URL", "redis://valkey:6379"),
+		Environment: env.Env("ENVIRONMENT", "development"),
+		RabbitMQURL: env.Env("RABBITMQ_URL", "amqp://admin:password@rabbitmq:5672/"),
+		DatabaseURL: env.Env("DATABASE_URL", "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"),
 	}
 
-	return cfg
+	errs := validate.ValidateStruct(
+		portField("HTTP_PORT", "9090", &cfg.HTTPPort),
+		portField("GRPC_PORT", "50051", &cfg.GRPCPort),
+		func() validate.ValidationErrors {
+			return validate.String("LOG_LEVEL").OneOf("debug", "info", "warn", "error").ValidateAll(cfg.LogLevel)
+		},
+		func() validate.ValidationErrors {
+			return validate.String("REDIS_URL").RedisURL().ValidateAll(cfg.RedisURL)
+		},
+		func() validate.ValidationErrors {
+			return validate.String("ENVIRONMENT").OneOf("development", "production", "staging").ValidateAll(cfg.Environment)
+		},
+		func() validate.ValidationErrors {
+			return validate.String("RABBITMQ_URL").RabbitMQURL().ValidateAll(cfg.RabbitMQURL)
+		},
+		func() validate.ValidationErrors {
+			return validate.String("DATABASE_URL").PostgresURL().ValidateAll(cfg.DatabaseURL)
+		},
+	)
+	if errs.HasErrors() {
+		return nil, errs
+	}
+
+	return cfg, nil
+}
+
+// portField reads a port from the environment, parses it as an integer, and
+// stores the result in dst. Values that are not integers or fall outside
+// 1-65535 are reported as validation errors instead of being silently replaced
+// by the fallback.
+func portField(name, fallback string, dst *int) validate.ValidatorFunc {
+	return func() validate.ValidationErrors {
+		port, err := validate.Int(name).ParseString(env.Env(name, fallback))
+		if err != nil {
+			return validate.ValidationErrors{
+				validate.NewValidationError(name, err.Error(), "parse"),
+			}
+		}
+
+		*dst = port
+		return validate.Int(name).Min(1).Max(65535).ValidateAll(port)
+	}
 }
