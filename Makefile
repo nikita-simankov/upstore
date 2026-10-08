@@ -39,5 +39,8 @@ compose-services-up: docker-network-create
 compose-services-down:
 	$(DOCKER_COMPOSE_SERVICES) down
 
+compose-services-logs:
+	$(DOCKER_COMPOSE_SERVICES) logs -f
+
 compose-services-build:
 	$(DOCKER_COMPOSE_SERVICES) build

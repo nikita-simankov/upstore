@@ -16,9 +16,7 @@ func Env[T value](key string, fallback T) T {
 		return fallback
 	}
 
-	anchor := new(T)
-
-	switch any(anchor).(type) {
+	switch any(fallback).(type) {
 	case int:
 		value, err := strconv.Atoi(raw)
 

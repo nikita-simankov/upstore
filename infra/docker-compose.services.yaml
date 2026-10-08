@@ -15,23 +15,23 @@ services:
 
     environment:
       ENVIRONMENT: development
-      HTTP_PORT: ":9090"
+      HTTP_PORT: ":9091"
       GRPC_PORT: ":50051"
       REDIS_URL: "redis://valkey:6379"
       RABBITMQ_URL: "amqp://upstore:dev_only_password@rabbitmq:5672/"
-      DATABASE_URL: "postgres://upstore_add:upstore_owner_pass@postgres:5432/upstore?sslmode=disable"
+      DATABASE_URL: "postgres://upstore_app:upstore_owner_pass@postgres:5432/upstore?sslmode=disable"
 
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:9091:9090"
       - "127.0.0.1:50051:50051"
 
-    depends_on:
-      valkey:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    # depends_on:
+    #   valkey:
+    #     condition: service_healthy
+    #   postgres:
+    #     condition: service_healthy
+    #   rabbitmq:
+    #     condition: service_healthy
 
     networks:
       - upstore
