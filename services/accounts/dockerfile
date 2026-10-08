@@ -14,6 +14,7 @@ COPY proto/generated/go.mod proto/generated/go.sum* ./proto/generated/
 COPY services/${SERVICE_NAME}/go.mod services/${SERVICE_NAME}/go.sum* ./services/${SERVICE_NAME}/
 # go.work lists every service module, so go work sync needs each go.mod present.
 COPY services/profiles/go.mod services/profiles/go.sum* ./services/profiles/
+COPY services/gateway/go.mod services/gateway/go.sum* ./services/gateway/
 
 RUN go work sync
 

@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         # proto/generated has no Go packages yet; add it here once it does.
-        module: [shared, services/accounts, services/profiles]
+        module: [shared, services/accounts, services/profiles, services/gateway]
     steps:
       - uses: actions/checkout@v4
 

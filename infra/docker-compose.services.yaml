@@ -58,6 +58,31 @@ services:
     networks:
       - upstore
 
+  gateway:
+    build:
+      context: ..
+      dockerfile: services/gateway/dockerfile
+      args:
+        SERVICE_NAME: gateway
+        SERVICE_PATH: services/gateway
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
+    image: upstore/gateway:${BUILD_VERSION:-dev}
+    restart: unless-stopped
+    container_name: upstore-gateway
+
+    environment:
+      ENVIRONMENT: development
+      HTTP_PORT: "9090"
+      ACCOUNTS_URL: "http://accounts:9090"
+      # Public key only. The gateway cannot sign tokens.
+      ACCESS_PUBLIC_KEY: "4XRd+ejtU1hvPwV65oaz3uRQADn+OxnrS5lFI2P3B7Y="
+
+    ports:
+      - "127.0.0.1:9090:9090"
+
+    networks:
+      - upstore
+
 networks:
   upstore:
     name: upstore

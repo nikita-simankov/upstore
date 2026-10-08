@@ -304,6 +304,8 @@ The `users` service was split into two services, and `users` was renamed to `acc
 - **accounts** (`services/accounts`): credentials, sessions, security. It owns the `accounts`, `auth_identities`, `sessions`, `email_verifications`, and `outbox_events` tables. It publishes `account.created` through the outbox.
 - **profiles** (`services/profiles`): account type (seller or shopper) and profile fields. It consumes `account.created` from `profiles.account-created` and creates the profile idempotently.
 - **shared/events**: the exchange name (`upstore.events`), the routing keys, the account types, and the event payloads. Both services import it.
+- **gateway** (`services/gateway`): the public entry point on host port 9090. It verifies access tokens with the public key only, forwards `/v1/auth/*` to accounts without a token, and forwards protected routes (registered with `Protect`) only when the token is valid. It strips any client-sent `X-Account-ID` and sets its own from the verified token.
+- **shared/authtoken**: token verification (EdDSA, issuer, expiry) and public key parsing. Accounts signs with it, and the gateway verifies with it.
 
 ### Status
 | Step | Area | State |
@@ -319,6 +321,7 @@ The `users` service was split into two services, and `users` was renamed to `acc
 | 9 | Register and login HTTP endpoints with rate limits | done |
 | 10 | Sessions: Ed25519 access tokens, refresh rotation, logout | done |
 | 11 | Email verification: single-use links, resend, Resend mailer | done |
+| 12 | Gateway: token verification, auth passthrough, protected routes, host port 9090 | done (staged, not committed) |
 
 ### Accounts HTTP API (`/v1/auth/`)
 - `POST register`: 201 with a pending account, sends a verification link. 409 if the email is taken.
@@ -343,13 +346,16 @@ The `users` service was split into two services, and `users` was renamed to `acc
 ### Environment (accounts)
 `DATABASE_URL`, `RABBITMQ_URL`, `HTTP_PORT`, `GRPC_PORT`, `ENVIRONMENT`, `ACCESS_SIGNING_KEY` (base64 Ed25519 seed, required), `PUBLIC_APP_URL` (verification links point at `/verify-email`), `RESEND_API_KEY` and `MAIL_FROM` (required outside `development`; the key is a secret and is never logged).
 
+### Environment (gateway)
+`HTTP_PORT` (default 9090), `ACCESS_PUBLIC_KEY` (base64 Ed25519 public key, required; the gateway never holds the signing key), `ACCOUNTS_URL` (default `http://accounts:9090`).
+
 ### Tests
 - Unit: `go test ./...` in `services/accounts` and `services/profiles`. Integration tests skip without their variables.
 - Database: `ACCOUNTS_TEST_DATABASE_URL` and `PROFILES_TEST_DATABASE_URL`. Apply `migrations/00001_*.sql` first. Run with `-p 1`, because packages share the database.
 - Broker: `ACCOUNTS_TEST_AMQP_URL` and `PROFILES_TEST_AMQP_URL`.
 
 ### Next steps
-1. **Gateway service:** verify access tokens with the public key, route requests, and own host port 9090.
+1. **Protected routes:** no upstream sits behind `Protect` yet. Register `/v1/profiles/` once profiles has an HTTP API. The accounts service is still published on host port 9091, so direct access bypasses the gateway. That is acceptable for auth routes, but protected services must never be published to the host.
 2. **OAuth sign-in:** Google, Apple, and Telegram callbacks that create or link `auth_identities`.
 3. **Resend setup:** verify the sending domain in Resend, then set `RESEND_API_KEY` and `MAIL_FROM` in each shared environment. The Resend mailer is tested against a local server only, so the first real send is still unverified.
 4. **Profiles API:** read and update profiles.

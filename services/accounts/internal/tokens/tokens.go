@@ -6,34 +6,29 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/nikita-simankov/upstore/shared/authtoken"
 )
 
 const (
-	// IssuerName is the iss claim. Verifiers reject tokens from any other issuer.
-	IssuerName = "upstore-accounts"
+	// IssuerName is the iss claim. It is defined in shared/authtoken, where verifiers check it.
+	IssuerName = authtoken.IssuerName
 	// AccessTokenTTL is how long an access token is valid. It is short, so a stolen token
 	// expires quickly, and the refresh flow handles the rest.
 	AccessTokenTTL = 15 * time.Minute
-	// algorithm is the only signing method accepted. It is pinned so that "none" and
-	// algorithm-confusion tokens are rejected.
-	algorithm = "EdDSA"
 	// refreshTokenBytes is the size of a refresh token before encoding: 256 random bits.
 	refreshTokenBytes = 32
 )
 
 // ErrInvalidToken is returned for any access token that fails verification.
-var ErrInvalidToken = errors.New("invalid or expired access token")
+var ErrInvalidToken = authtoken.ErrInvalidToken
 
 // Claims are the verified contents of an access token.
-type Claims struct {
-	AccountID string
-	SessionID string
-}
+type Claims = authtoken.Claims
 
 type accessClaims struct {
 	SessionID string `json:"sid"`
@@ -74,23 +69,11 @@ func (i *Issuer) IssueAccess(accountID, sessionID string) (string, error) {
 // Verify checks the signature, algorithm, issuer, and expiry of an access token.
 // It returns ErrInvalidToken for any failure, without saying which check failed.
 func (i *Issuer) Verify(token string) (Claims, error) {
-	parsed, err := jwt.ParseWithClaims(token, &accessClaims{}, func(*jwt.Token) (any, error) {
-		return i.key.Public(), nil
-	},
-		jwt.WithValidMethods([]string{algorithm}),
-		jwt.WithIssuer(IssuerName),
-		jwt.WithExpirationRequired(),
-		jwt.WithTimeFunc(i.now),
-	)
+	claims, err := authtoken.Verify(i.key.Public().(ed25519.PublicKey), token, i.now())
 	if err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-
-	claims, ok := parsed.Claims.(*accessClaims)
-	if !ok || !parsed.Valid || claims.Subject == "" || claims.SessionID == "" {
-		return Claims{}, ErrInvalidToken
-	}
-	return Claims{AccountID: claims.Subject, SessionID: claims.SessionID}, nil
+	return claims, nil
 }
 
 // NewRefreshToken returns a new random refresh token and the hash to store in place of it.
