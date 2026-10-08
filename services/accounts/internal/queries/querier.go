@@ -13,9 +13,11 @@ import (
 type Querier interface {
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateAuthIdentity(ctx context.Context, arg CreateAuthIdentityParams) (AuthIdentity, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	GetAccountByAuthIdentity(ctx context.Context, arg GetAccountByAuthIdentityParams) (Account, error)
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
+	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) (OutboxEvent, error)
 	ListUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]OutboxEvent, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) error
@@ -24,6 +26,10 @@ type Querier interface {
 	// failures cannot each read a stale count and skip the lock.
 	RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (Account, error)
 	RecordSuccessfulLogin(ctx context.Context, id pgtype.UUID) error
+	RevokeAccountSessions(ctx context.Context, accountID pgtype.UUID) error
+	// Returns the number of rows changed. Zero means the session was already revoked, which
+	// the caller must treat as a reused token.
+	RevokeSession(ctx context.Context, id pgtype.UUID) (int64, error)
 	SetAccountBan(ctx context.Context, arg SetAccountBanParams) error
 	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) error
 }

@@ -54,16 +54,18 @@ func DefaultConfig() Config {
 // API serves the auth endpoints.
 type API struct {
 	auth       *auth.Service
+	sessions   *auth.Sessions
 	loginIP    *keyedLimiter
 	loginEmail *keyedLimiter
 	registerIP *keyedLimiter
 }
 
-// New returns an API that uses the given Service and limits.
-func New(service *auth.Service, cfg Config) *API {
+// New returns an API that uses the given services and limits.
+func New(service *auth.Service, sessions *auth.Sessions, cfg Config) *API {
 	now := time.Now
 	return &API{
 		auth:       service,
+		sessions:   sessions,
 		loginIP:    newKeyedLimiter(cfg.LoginPerIP, cfg.LoginBurst, now),
 		loginEmail: newKeyedLimiter(cfg.LoginPerEmail, cfg.EmailBurst, now),
 		registerIP: newKeyedLimiter(cfg.RegisterPerIP, cfg.RegisterBurst, now),
@@ -75,6 +77,8 @@ func (a *API) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/auth/register", a.register)
 	mux.HandleFunc("POST /v1/auth/login", a.login)
+	mux.HandleFunc("POST /v1/auth/refresh", a.refresh)
+	mux.HandleFunc("POST /v1/auth/logout", a.logout)
 	return mux
 }
 
@@ -92,6 +96,26 @@ type loginRequest struct {
 type accountResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// sessionResponse is returned by sign-in: the account and a new session's tokens.
+type sessionResponse struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// tokenResponse is returned by refresh.
+type tokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
 }
 
 func (a *API) register(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +169,70 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	account, err := a.auth.Login(r.Context(), email, req.Password)
+	if err != nil {
+		a.writeAuthError(w, r, err)
+		return
+	}
+
+	tok, err := a.sessions.Issue(r.Context(), account)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "issue session failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionResponse{
+		ID:           formatUUID(account.ID),
+		Status:       string(account.Status),
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		ExpiresIn:    tok.ExpiresIn,
+	})
+}
+
+func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
+	if !a.loginIP.Allow(clientIP(r)) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
+		return
+	}
+
+	var req refreshRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+
+	tok, err := a.sessions.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidRefreshToken) {
+			writeError(w, http.StatusUnauthorized, auth.ErrInvalidRefreshToken.Error())
+			return
+		}
+		a.writeAuthError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tokenResponse{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		ExpiresIn:    tok.ExpiresIn,
+	})
+}
+
+// logout always answers 204, whether or not the refresh token was valid, so it reveals nothing.
+func (a *API) logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if err := a.sessions.Logout(r.Context(), req.RefreshToken); err != nil {
+		slog.ErrorContext(r.Context(), "logout failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeAuthError maps the sign-in and refresh errors that have a client-facing meaning.
+// Anything else is logged and returned as a generic 500.
+func (a *API) writeAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, auth.ErrInvalidCredentials.Error())
@@ -152,11 +240,9 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, auth.ErrAccountBanned.Error())
 	case errors.Is(err, auth.ErrAccountNotActive):
 		writeError(w, http.StatusForbidden, auth.ErrAccountNotActive.Error())
-	case err != nil:
-		slog.ErrorContext(r.Context(), "sign-in failed with internal error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
 	default:
-		writeJSON(w, http.StatusOK, accountResponse{ID: formatUUID(account.ID), Status: string(account.Status)})
+		slog.ErrorContext(r.Context(), "auth request failed with internal error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 }
 

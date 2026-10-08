@@ -20,6 +20,8 @@ services:
       REDIS_URL: "redis://valkey:6379"
       RABBITMQ_URL: "amqp://upstore:dev_only_password@rabbitmq:5672/"
       DATABASE_URL: "postgres://upstore_app:upstore_owner_pass@postgres:5432/upstore?sslmode=disable"
+      # DEV ONLY: generated for local compose. Rotate before any shared environment.
+      ACCESS_SIGNING_KEY: "d06xFThFc944yc++NGF/sU2MvVOQ5h0jiNY4aLEIi20="
 
     ports:
       - "127.0.0.1:9091:9090"

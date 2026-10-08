@@ -18,6 +18,7 @@ import (
 	"github.com/nikita-simankov/upstore/services/accounts/internal/config"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/httpapi"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/outbox"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/tokens"
 	"github.com/nikita-simankov/upstore/shared/events"
 )
 
@@ -69,9 +70,15 @@ func run() error {
 
 	go outbox.NewRelay(pool, publisher, 100).Run(ctx, time.Second)
 
+	signingKey, err := tokens.ParseSigningKey(cfg.AccessSigningKey)
+	if err != nil {
+		return fmt.Errorf("access signing key: %w", err)
+	}
+	sessions := auth.NewSessions(pool, tokens.NewIssuer(signingKey))
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler(pool))
-	mux.Handle("/v1/auth/", httpapi.New(auth.NewService(pool), httpapi.DefaultConfig()).Routes())
+	mux.Handle("/v1/auth/", httpapi.New(auth.NewService(pool), sessions, httpapi.DefaultConfig()).Routes())
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

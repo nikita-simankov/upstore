@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,7 @@ import (
 	"github.com/nikita-simankov/upstore/services/accounts/internal/auth"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/queries"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/testdb"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/tokens"
 )
 
 const (
@@ -26,7 +29,12 @@ const (
 func newTestAPI(t *testing.T, cfg Config) (http.Handler, *queries.Queries) {
 	t.Helper()
 	pool := testdb.Pool(t)
-	return New(auth.NewService(pool), cfg).Routes(), queries.New(pool)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	sessions := auth.NewSessions(pool, tokens.NewIssuer(key))
+	return New(auth.NewService(pool), sessions, cfg).Routes(), queries.New(pool)
 }
 
 // generousConfig is high enough that no test hits the limiter by accident.
@@ -232,5 +240,71 @@ func TestKeyedLimiterBoundsMemory(t *testing.T) {
 	}
 	if len(l.entries) > maxLimiterKeys {
 		t.Errorf("tracked keys = %d, want at most %d", len(l.entries), maxLimiterKeys)
+	}
+}
+
+// signInTokens registers, activates, and signs in the test account, and returns the sign-in body.
+func signInTokens(t *testing.T, h http.Handler, q *queries.Queries) sessionResponse {
+	t.Helper()
+	register(h, testEmail, testPassword, "shopper")
+	acc, err := q.GetAccountByEmail(t.Context(), testEmail)
+	if err != nil {
+		t.Fatalf("GetAccountByEmail: %v", err)
+	}
+	if err := q.MarkEmailVerified(t.Context(), acc.ID); err != nil {
+		t.Fatalf("MarkEmailVerified: %v", err)
+	}
+	rec := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.20:1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login: status %d, body %s", rec.Code, rec.Body)
+	}
+	var body sessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("login response: %v", err)
+	}
+	return body
+}
+
+// TestLoginReturnsTokensAndRefreshRotates tests that sign-in returns tokens, that refresh
+// returns a new pair, and that the old refresh token is then refused.
+func TestLoginReturnsTokensAndRefreshRotates(t *testing.T) {
+	h, q := newTestAPI(t, generousConfig())
+	session := signInTokens(t, h, q)
+	if session.AccessToken == "" || session.RefreshToken == "" || session.ExpiresIn != 900 {
+		t.Fatalf("login tokens = %+v", session)
+	}
+
+	refreshed := do(h, "/v1/auth/refresh", `{"refresh_token":"`+session.RefreshToken+`"}`, "192.0.2.20:1")
+	if refreshed.Code != http.StatusOK {
+		t.Fatalf("refresh: status %d, body %s", refreshed.Code, refreshed.Body)
+	}
+	var next tokenResponse
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &next); err != nil {
+		t.Fatalf("refresh response: %v", err)
+	}
+	if next.RefreshToken == session.RefreshToken {
+		t.Error("refresh returned the same refresh token")
+	}
+
+	reused := do(h, "/v1/auth/refresh", `{"refresh_token":"`+session.RefreshToken+`"}`, "192.0.2.20:1")
+	if reused.Code != http.StatusUnauthorized {
+		t.Errorf("reused refresh token: status %d, want 401", reused.Code)
+	}
+}
+
+// TestLogoutEndsSession tests that logout returns 204 and the refresh token stops working.
+// Logout with an unknown token also returns 204.
+func TestLogoutEndsSession(t *testing.T) {
+	h, q := newTestAPI(t, generousConfig())
+	session := signInTokens(t, h, q)
+
+	if rec := do(h, "/v1/auth/logout", `{"refresh_token":"`+session.RefreshToken+`"}`, "192.0.2.21:1"); rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: status %d, want 204", rec.Code)
+	}
+	if rec := do(h, "/v1/auth/refresh", `{"refresh_token":"`+session.RefreshToken+`"}`, "192.0.2.21:1"); rec.Code != http.StatusUnauthorized {
+		t.Errorf("refresh after logout: status %d, want 401", rec.Code)
+	}
+	if rec := do(h, "/v1/auth/logout", `{"refresh_token":"unknown"}`, "192.0.2.21:1"); rec.Code != http.StatusNoContent {
+		t.Errorf("logout with unknown token: status %d, want 204", rec.Code)
 	}
 }

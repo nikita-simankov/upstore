@@ -129,3 +129,12 @@ type OutboxEvent struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
 }
+
+type Session struct {
+	ID               pgtype.UUID        `json:"id"`
+	AccountID        pgtype.UUID        `json:"account_id"`
+	RefreshTokenHash []byte             `json:"refresh_token_hash"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+}

@@ -31,7 +31,7 @@ func testQueries(t *testing.T) *Queries {
 	t.Cleanup(pool.Close)
 
 	// Start each test from an empty accounts table.
-	if _, err := pool.Exec(ctx, "TRUNCATE accounts, auth_identities"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE accounts, auth_identities, sessions"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 

@@ -6,8 +6,12 @@ import (
 	"github.com/nikita-simankov/upstore/shared/validate"
 )
 
+// testSigningKey is a fixed test-only seed. It is not used anywhere outside tests.
+const testSigningKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+
 // clearEnv unsets every variable Load reads so the developer's shell cannot change test results.
-// env.Env treats an empty value as unset, so setting "" is enough.
+// env.Env treats an empty value as unset, so setting "" is enough. The signing key is set to a
+// valid test value, because it is required and has no default.
 func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
@@ -15,6 +19,17 @@ func clearEnv(t *testing.T) {
 		"ENVIRONMENT", "RABBITMQ_URL", "DATABASE_URL",
 	} {
 		t.Setenv(key, "")
+	}
+	t.Setenv("ACCESS_SIGNING_KEY", testSigningKey)
+}
+
+// TestLoadRequiresSigningKey tests that the service refuses to start without a signing key.
+func TestLoadRequiresSigningKey(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("ACCESS_SIGNING_KEY", "")
+
+	if _, err := Load(); err == nil {
+		t.Error("Load() accepted an empty ACCESS_SIGNING_KEY")
 	}
 }
 

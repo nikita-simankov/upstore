@@ -54,7 +54,22 @@ CREATE TABLE outbox_events (
 
 CREATE INDEX outbox_events_unpublished_idx ON outbox_events (id) WHERE published_at IS NULL;
 
+-- A session is one sign-in. Only the SHA-256 hash of the refresh token is stored, so a
+-- database leak does not expose usable tokens. Each refresh replaces the row's token and
+-- revokes the old one.
+CREATE TABLE sessions (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id         UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    refresh_token_hash BYTEA NOT NULL UNIQUE,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at         TIMESTAMPTZ NOT NULL,
+    revoked_at         TIMESTAMPTZ
+);
+
+CREATE INDEX sessions_account_id_idx ON sessions (account_id);
+
 -- +goose Down
+DROP TABLE sessions;
 DROP TABLE outbox_events;
 DROP TABLE auth_identities;
 DROP TABLE accounts;

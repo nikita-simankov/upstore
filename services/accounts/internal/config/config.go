@@ -13,20 +13,27 @@ type Config struct {
 	Environment string
 	RabbitMQURL string
 	DatabaseURL string
+	// AccessSigningKey is the base64 Ed25519 seed that signs access tokens. It has no default:
+	// a missing key must stop the service, not fall back to a key that is known to everyone.
+	AccessSigningKey string
 }
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		LogLevel:    env.Env("LOG_LEVEL", "debug"),
-		RedisURL:    env.Env("REDIS_URL", "redis://valkey:6379"),
-		Environment: env.Env("ENVIRONMENT", "development"),
-		RabbitMQURL: env.Env("RABBITMQ_URL", "amqp://admin:password@rabbitmq:5672/"),
-		DatabaseURL: env.Env("DATABASE_URL", "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"),
+		LogLevel:         env.Env("LOG_LEVEL", "debug"),
+		RedisURL:         env.Env("REDIS_URL", "redis://valkey:6379"),
+		Environment:      env.Env("ENVIRONMENT", "development"),
+		RabbitMQURL:      env.Env("RABBITMQ_URL", "amqp://admin:password@rabbitmq:5672/"),
+		DatabaseURL:      env.Env("DATABASE_URL", "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"),
+		AccessSigningKey: env.Env("ACCESS_SIGNING_KEY", ""),
 	}
 
 	errs := validate.ValidateStruct(
 		portField("HTTP_PORT", "9090", &cfg.HTTPPort),
 		portField("GRPC_PORT", "50051", &cfg.GRPCPort),
+		func() validate.ValidationErrors {
+			return validate.String("ACCESS_SIGNING_KEY").Required().ValidateAll(cfg.AccessSigningKey)
+		},
 		func() validate.ValidationErrors {
 			return validate.String("LOG_LEVEL").OneOf("debug", "info", "warn", "error").ValidateAll(cfg.LogLevel)
 		},
