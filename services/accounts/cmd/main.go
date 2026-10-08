@@ -14,7 +14,9 @@ import (
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"github.com/nikita-simankov/upstore/services/accounts/internal/auth"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/config"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/httpapi"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/outbox"
 	"github.com/nikita-simankov/upstore/shared/events"
 )
@@ -67,9 +69,16 @@ func run() error {
 
 	go outbox.NewRelay(pool, publisher, 100).Run(ctx, time.Second)
 
+	mux := http.NewServeMux()
+	mux.Handle("GET /health", healthHandler(pool))
+	mux.Handle("/v1/auth/", httpapi.New(auth.NewService(pool), httpapi.DefaultConfig()).Routes())
+
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler: healthHandler(pool),
+		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 	serverErr := make(chan error, 1)
 	go func() {
@@ -92,8 +101,7 @@ func run() error {
 
 // healthHandler serves GET /health. It returns 200 when the database answers, 503 otherwise.
 func healthHandler(pool *pgxpool.Pool) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
@@ -103,5 +111,4 @@ func healthHandler(pool *pgxpool.Pool) http.Handler {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	return mux
 }

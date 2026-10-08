@@ -1,0 +1,236 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/time/rate"
+
+	"github.com/nikita-simankov/upstore/services/accounts/internal/auth"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/queries"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/testdb"
+)
+
+const (
+	testEmail    = "ivan@mail.by"
+	testPassword = "correct horse battery"
+)
+
+// newTestAPI returns a handler on the test database. Limits are generous unless a test sets its own.
+func newTestAPI(t *testing.T, cfg Config) (http.Handler, *queries.Queries) {
+	t.Helper()
+	pool := testdb.Pool(t)
+	return New(auth.NewService(pool), cfg).Routes(), queries.New(pool)
+}
+
+// generousConfig is high enough that no test hits the limiter by accident.
+func generousConfig() Config {
+	return Config{
+		LoginPerIP:    rate.Inf,
+		LoginBurst:    1000,
+		LoginPerEmail: rate.Inf,
+		EmailBurst:    1000,
+		RegisterPerIP: rate.Inf,
+		RegisterBurst: 1000,
+	}
+}
+
+// do sends a request to h from the given peer address and returns the response.
+func do(h http.Handler, path, body, peer string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = peer
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// errorOf returns the "error" field of a JSON error response.
+func errorOf(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not JSON: %q", rec.Body.String())
+	}
+	return body["error"]
+}
+
+// register posts a registration and returns the response.
+func register(h http.Handler, email, password, accountType string) *httptest.ResponseRecorder {
+	body := `{"email":"` + email + `","password":"` + password + `","account_type":"` + accountType + `"}`
+	return do(h, "/v1/auth/register", body, "192.0.2.1:1000")
+}
+
+// TestRegisterAndLoginFlow tests the happy path: registration returns 201 with a pending account,
+// and sign-in after email verification returns 200.
+func TestRegisterAndLoginFlow(t *testing.T) {
+	h, q := newTestAPI(t, generousConfig())
+
+	rec := register(h, testEmail, testPassword, "shopper")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register: status %d, body %s", rec.Code, rec.Body)
+	}
+	var created accountResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("register response: %v", err)
+	}
+	if created.Status != "pending" || len(created.ID) != 36 {
+		t.Errorf("register response = %+v, want pending account with a UUID", created)
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(created.ID); err != nil {
+		t.Fatalf("scan id: %v", err)
+	}
+	if err := q.MarkEmailVerified(t.Context(), id); err != nil {
+		t.Fatalf("MarkEmailVerified: %v", err)
+	}
+
+	login := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.1:1000")
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: status %d, body %s", login.Code, login.Body)
+	}
+}
+
+// TestRegisterErrors tests the status code for each rejected registration.
+func TestRegisterErrors(t *testing.T) {
+	h, _ := newTestAPI(t, generousConfig())
+	register(h, testEmail, testPassword, "shopper")
+
+	tests := []struct {
+		name        string
+		email       string
+		password    string
+		accountType string
+		want        int
+	}{
+		{"duplicate email in other case", "IVAN@MAIL.BY", testPassword, "shopper", http.StatusConflict},
+		{"invalid email", "not-an-email", testPassword, "shopper", http.StatusBadRequest},
+		{"weak password", "new@mail.by", "short", "shopper", http.StatusBadRequest},
+		{"unknown account type", "new@mail.by", testPassword, "admin", http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := register(h, tt.email, tt.password, tt.accountType)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d, body %s", rec.Code, tt.want, rec.Body)
+			}
+			if rec.Code >= 500 {
+				t.Errorf("internal error leaked to the client: %s", rec.Body)
+			}
+		})
+	}
+}
+
+// TestLoginErrors tests the status code for each refused sign-in, and that the message never
+// reveals whether the email exists.
+func TestLoginErrors(t *testing.T) {
+	h, q := newTestAPI(t, generousConfig())
+
+	// Pending account: correct password, not verified.
+	register(h, testEmail, testPassword, "seller")
+
+	wrongPassword := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"nope nope nope"}`, "192.0.2.2:1")
+	unknown := do(h, "/v1/auth/login", `{"email":"nobody@mail.by","password":"nope nope nope"}`, "192.0.2.2:1")
+	if wrongPassword.Code != http.StatusUnauthorized || unknown.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password %d, unknown email %d; want 401 for both", wrongPassword.Code, unknown.Code)
+	}
+	if errorOf(t, wrongPassword) != errorOf(t, unknown) {
+		t.Errorf("messages differ: %q vs %q", errorOf(t, wrongPassword), errorOf(t, unknown))
+	}
+
+	pending := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.2:1")
+	if pending.Code != http.StatusForbidden {
+		t.Errorf("pending account: status %d, want 403", pending.Code)
+	}
+
+	acc, err := q.GetAccountByEmail(t.Context(), testEmail)
+	if err != nil {
+		t.Fatalf("GetAccountByEmail: %v", err)
+	}
+	if err := q.MarkEmailVerified(t.Context(), acc.ID); err != nil {
+		t.Fatalf("MarkEmailVerified: %v", err)
+	}
+	if err := q.SetAccountBan(t.Context(), queries.SetAccountBanParams{
+		ID:          acc.ID,
+		BannedUntil: pgtype.Timestamptz{InfinityModifier: pgtype.Infinity, Valid: true},
+		BanReason:   pgtype.Text{String: "spam", Valid: true},
+	}); err != nil {
+		t.Fatalf("SetAccountBan: %v", err)
+	}
+	banned := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.2:1")
+	if banned.Code != http.StatusForbidden {
+		t.Errorf("banned account: status %d, want 403", banned.Code)
+	}
+}
+
+// TestRequestBodyChecks tests the size cap and the unknown-field rejection.
+func TestRequestBodyChecks(t *testing.T) {
+	h, _ := newTestAPI(t, generousConfig())
+
+	big := `{"email":"` + strings.Repeat("a", maxBodyBytes) + `"}`
+	if rec := do(h, "/v1/auth/login", big, "192.0.2.3:1"); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized body: status %d, want 413", rec.Code)
+	}
+
+	unknown := `{"email":"` + testEmail + `","password":"x","role":"admin"}`
+	if rec := do(h, "/v1/auth/login", unknown, "192.0.2.3:1"); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown field: status %d, want 400", rec.Code)
+	}
+}
+
+// TestLoginRateLimitPerIP tests that repeated sign-in attempts from one address are limited.
+func TestLoginRateLimitPerIP(t *testing.T) {
+	cfg := generousConfig()
+	cfg.LoginPerIP = rate.Every(time.Hour)
+	cfg.LoginBurst = 3
+	h, _ := newTestAPI(t, cfg)
+
+	body := `{"email":"nobody@mail.by","password":"nope nope nope"}`
+	for i := 0; i < 3; i++ {
+		if rec := do(h, "/v1/auth/login", body, "192.0.2.4:1"); rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d limited too early", i+1)
+		}
+	}
+	if rec := do(h, "/v1/auth/login", body, "192.0.2.4:1"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("fourth attempt: status %d, want 429", rec.Code)
+	}
+	// A different address has its own bucket.
+	if rec := do(h, "/v1/auth/login", body, "192.0.2.5:1"); rec.Code == http.StatusTooManyRequests {
+		t.Errorf("other address limited: status %d", rec.Code)
+	}
+}
+
+// TestLoginRateLimitPerEmail tests that attempts against one email are limited even when they
+// come from many addresses.
+func TestLoginRateLimitPerEmail(t *testing.T) {
+	cfg := generousConfig()
+	cfg.LoginPerEmail = rate.Every(time.Hour)
+	cfg.EmailBurst = 2
+	h, _ := newTestAPI(t, cfg)
+
+	body := `{"email":"Victim@Mail.BY","password":"nope nope nope"}`
+	do(h, "/v1/auth/login", body, "192.0.2.10:1")
+	do(h, "/v1/auth/login", body, "192.0.2.11:1")
+	if rec := do(h, "/v1/auth/login", body, "192.0.2.12:1"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("third attempt for the same email: status %d, want 429", rec.Code)
+	}
+}
+
+// TestKeyedLimiterBoundsMemory tests that the key table does not grow past its cap.
+func TestKeyedLimiterBoundsMemory(t *testing.T) {
+	now := time.Now()
+	l := newKeyedLimiter(rate.Every(time.Hour), 1, func() time.Time { return now })
+	for i := 0; i < maxLimiterKeys+10; i++ {
+		l.Allow("key-" + strconv.Itoa(i))
+	}
+	if len(l.entries) > maxLimiterKeys {
+		t.Errorf("tracked keys = %d, want at most %d", len(l.entries), maxLimiterKeys)
+	}
+}
