@@ -2,6 +2,9 @@
 // Producers and consumers both import these types, so the contract lives in one place.
 package events
 
+// Exchange is the topic exchange that all service events are published to.
+const Exchange = "upstore.events"
+
 // RoutingKeyAccountCreated is the routing key of the account.created event.
 const RoutingKeyAccountCreated = "account.created"
 

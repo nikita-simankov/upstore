@@ -1,4 +1,4 @@
-.PHONY: proto sqlc-generate migrate-up migrate-down
+.PHONY: proto sqlc-generate migrate-accounts-up migrate-accounts-down migrate-profiles-up migrate-profiles-down
 
 DOCKER_NETWORK_NAME := upstore
 DOCKER_COMPOSE_INFRA := docker compose -f infra/docker-compose.infra.yaml
@@ -48,13 +48,21 @@ compose-services-build:
 sqlc-generate:
 	@echo "[make:sqlc-generate] Generating database code..."
 	sqlc generate -f services/accounts/sqlc.yaml
+	sqlc generate -f services/profiles/sqlc.yaml
 	@echo "[make:sqlc-generate] Database code generation complete"
 
 
-ACCOUNTS_DATABASE_URL ?= postgres://upstore_owner:upstore_owner_pass@127.0.0.1:5432/upstore?sslmode=disable
+DATABASE_OWNER_URL ?= postgres://upstore_owner:upstore_owner_pass@127.0.0.1:5432/upstore?sslmode=disable
 
-migrate-up:
-	goose -dir services/accounts/migrations postgres "$(ACCOUNTS_DATABASE_URL)" up
+# Each service keeps its own goose version table, so both migration sets can share one database.
+migrate-accounts-up:
+	goose -table accounts_schema_version -dir services/accounts/migrations postgres "$(DATABASE_OWNER_URL)" up
 
-migrate-down:
-	goose -dir services/accounts/migrations postgres "$(ACCOUNTS_DATABASE_URL)" down
+migrate-accounts-down:
+	goose -table accounts_schema_version -dir services/accounts/migrations postgres "$(DATABASE_OWNER_URL)" down
+
+migrate-profiles-up:
+	goose -table profiles_schema_version -dir services/profiles/migrations postgres "$(DATABASE_OWNER_URL)" up
+
+migrate-profiles-down:
+	goose -table profiles_schema_version -dir services/profiles/migrations postgres "$(DATABASE_OWNER_URL)" down
