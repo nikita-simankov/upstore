@@ -6,12 +6,30 @@
 
 ---
 
-## Project Overview
+## Product Overview
+
+Upstore is an e-commerce platform for creating, running and growing your own online store, built for merchants in Belarus and Russia. It exists because sanctions have cut much of the region off from global platforms like Shopify, leaving local sellers without a modern, reliable way to sell online. Upstore fills that gap with an all-in-one admin: products and variants, orders and returns, customers and reviews, discounts, and a customisable storefront on your own domain.
+
+It is designed around local reality from day one:
+- **Currencies:** prices in BYN and RUB
+- **Payments:** cards, ERIP, and cash on delivery
+- **Delivery:** local couriers and pickup points
+- **Languages:** the interface is in Russian and English
+
+Merchants see their money like a wallet, with balance, upcoming payouts and every transaction in one place. Analytics show what sells, when, and where shoppers drop off. A guided launch checklist takes a new seller from sign-up to first sale in minutes.
+
+**Visual direction:** calm and precise. Warm graphite-and-paper tones, soft rounded shapes, and colour used only when it means something. It draws on Shopify's practicality, shadcn's restraint, and Phantom's friendliness.
+
+**Goal:** give independent sellers in the region a store platform as polished as the global ones, without depending on them.
+
+---
+
+## Technical Overview
 
 Upstore is a microservices-based backend platform. The project uses:
 - **Language:** Go
 - **Architecture:** Microservices (users service, etc.)
-- **Database:** PostgreSQL
+- **Database:** PostgreSQL, with goose migrations and sqlc for typed queries
 - **Message Queue:** RabbitMQ
 - **Cache:** Redis
 - **Git Flow:** Branch-based with master as main branch
