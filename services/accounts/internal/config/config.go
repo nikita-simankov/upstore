@@ -16,6 +16,12 @@ type Config struct {
 	// AccessSigningKey is the base64 Ed25519 seed that signs access tokens. It has no default:
 	// a missing key must stop the service, not fall back to a key that is known to everyone.
 	AccessSigningKey string
+	// PublicAppURL is the front-end origin. Verification links point at its /verify-email page.
+	PublicAppURL string
+	// ResendAPIKey and MailFrom configure the Resend mailer. They are required outside development.
+	// The key is a secret: it is never logged.
+	ResendAPIKey string
+	MailFrom     string
 }
 
 func Load() (*Config, error) {
@@ -26,6 +32,9 @@ func Load() (*Config, error) {
 		RabbitMQURL:      env.Env("RABBITMQ_URL", "amqp://admin:password@rabbitmq:5672/"),
 		DatabaseURL:      env.Env("DATABASE_URL", "postgres://postgres:postgres@postgres:5432/postgres?sslmode=disable"),
 		AccessSigningKey: env.Env("ACCESS_SIGNING_KEY", ""),
+		PublicAppURL:     env.Env("PUBLIC_APP_URL", "http://localhost:3000"),
+		ResendAPIKey:     env.Env("RESEND_API_KEY", ""),
+		MailFrom:         env.Env("MAIL_FROM", ""),
 	}
 
 	errs := validate.ValidateStruct(
@@ -33,6 +42,9 @@ func Load() (*Config, error) {
 		portField("GRPC_PORT", "50051", &cfg.GRPCPort),
 		func() validate.ValidationErrors {
 			return validate.String("ACCESS_SIGNING_KEY").Required().ValidateAll(cfg.AccessSigningKey)
+		},
+		func() validate.ValidationErrors {
+			return validate.String("PUBLIC_APP_URL").Required().ValidateAll(cfg.PublicAppURL)
 		},
 		func() validate.ValidationErrors {
 			return validate.String("LOG_LEVEL").OneOf("debug", "info", "warn", "error").ValidateAll(cfg.LogLevel)
@@ -50,6 +62,16 @@ func Load() (*Config, error) {
 			return validate.String("DATABASE_URL").PostgresURL().ValidateAll(cfg.DatabaseURL)
 		},
 	)
+	// Outside development, a real mail provider is required, so the mail settings are mandatory.
+	if cfg.Environment != "development" {
+		if cfg.ResendAPIKey == "" {
+			errs = append(errs, validate.NewValidationError("RESEND_API_KEY", "is required outside development", "required"))
+		}
+		if cfg.MailFrom == "" {
+			errs = append(errs, validate.NewValidationError("MAIL_FROM", "is required outside development", "required"))
+		}
+	}
+
 	if errs.HasErrors() {
 		return nil, errs
 	}

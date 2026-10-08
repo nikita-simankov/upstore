@@ -17,8 +17,10 @@ import (
 	"github.com/nikita-simankov/upstore/services/accounts/internal/auth"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/config"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/httpapi"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/mail"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/outbox"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/tokens"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/verification"
 	"github.com/nikita-simankov/upstore/shared/events"
 )
 
@@ -76,9 +78,17 @@ func run() error {
 	}
 	sessions := auth.NewSessions(pool, tokens.NewIssuer(signingKey))
 
+	// Development prints verification links to the log, which is acceptable only on a developer's
+	// machine. Every other environment sends them through Resend.
+	var mailer mail.Mailer = mail.NewDevLogMailer()
+	if cfg.Environment != "development" {
+		mailer = mail.NewResendMailer(cfg.ResendAPIKey, cfg.MailFrom)
+	}
+	verify := verification.NewService(pool, mailer, cfg.PublicAppURL+"/verify-email?token=")
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", healthHandler(pool))
-	mux.Handle("/v1/auth/", httpapi.New(auth.NewService(pool), sessions, httpapi.DefaultConfig()).Routes())
+	mux.Handle("/v1/auth/", httpapi.New(auth.NewService(pool), sessions, verify, httpapi.DefaultConfig()).Routes())
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

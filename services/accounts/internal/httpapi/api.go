@@ -15,6 +15,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/nikita-simankov/upstore/services/accounts/internal/auth"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/verification"
 	"github.com/nikita-simankov/upstore/shared/events"
 )
 
@@ -55,20 +56,24 @@ func DefaultConfig() Config {
 type API struct {
 	auth       *auth.Service
 	sessions   *auth.Sessions
+	verify     *verification.Service
 	loginIP    *keyedLimiter
 	loginEmail *keyedLimiter
 	registerIP *keyedLimiter
+	resendIP   *keyedLimiter
 }
 
 // New returns an API that uses the given services and limits.
-func New(service *auth.Service, sessions *auth.Sessions, cfg Config) *API {
+func New(service *auth.Service, sessions *auth.Sessions, verify *verification.Service, cfg Config) *API {
 	now := time.Now
 	return &API{
 		auth:       service,
 		sessions:   sessions,
+		verify:     verify,
 		loginIP:    newKeyedLimiter(cfg.LoginPerIP, cfg.LoginBurst, now),
 		loginEmail: newKeyedLimiter(cfg.LoginPerEmail, cfg.EmailBurst, now),
 		registerIP: newKeyedLimiter(cfg.RegisterPerIP, cfg.RegisterBurst, now),
+		resendIP:   newKeyedLimiter(cfg.RegisterPerIP, cfg.RegisterBurst, now),
 	}
 }
 
@@ -79,6 +84,8 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/auth/login", a.login)
 	mux.HandleFunc("POST /v1/auth/refresh", a.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", a.logout)
+	mux.HandleFunc("POST /v1/auth/verify-email", a.verifyEmail)
+	mux.HandleFunc("POST /v1/auth/resend-verification", a.resendVerification)
 	return mux
 }
 
@@ -152,8 +159,53 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "register failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 	default:
+		// A failed send does not undo the registration. The user can ask for a new link.
+		if err := a.verify.Issue(r.Context(), account, email); err != nil {
+			slog.ErrorContext(r.Context(), "send verification link failed", "account_id", formatUUID(account.ID), "error", err)
+		}
 		writeJSON(w, http.StatusCreated, accountResponse{ID: formatUUID(account.ID), Status: string(account.Status)})
 	}
+}
+
+// verifyEmail consumes an emailed link and activates the account.
+func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+
+	err := a.verify.Verify(r.Context(), req.Token)
+	switch {
+	case errors.Is(err, verification.ErrInvalidToken):
+		writeError(w, http.StatusBadRequest, verification.ErrInvalidToken.Error())
+	case err != nil:
+		slog.ErrorContext(r.Context(), "verify email failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+	default:
+		writeJSON(w, http.StatusOK, map[string]string{"status": "verified"})
+	}
+}
+
+// resendVerification always answers 202. Whether the email exists, is already verified, or
+// was sent a link is not revealed.
+func (a *API) resendVerification(w http.ResponseWriter, r *http.Request) {
+	if !a.resendIP.Allow(clientIP(r)) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if err := a.verify.Resend(r.Context(), strings.TrimSpace(req.Email)); err != nil {
+		slog.ErrorContext(r.Context(), "resend verification failed", "error", err)
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {

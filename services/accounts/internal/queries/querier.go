@@ -11,14 +11,21 @@ import (
 )
 
 type Querier interface {
+	// Marks the token used and returns its account. No row means the token is unknown, already
+	// used, or expired, and the caller must refuse it without saying which. The current time is
+	// passed in, so expiry follows the service's clock.
+	ConsumeEmailVerification(ctx context.Context, arg ConsumeEmailVerificationParams) (pgtype.UUID, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateAuthIdentity(ctx context.Context, arg CreateAuthIdentityParams) (AuthIdentity, error)
+	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (EmailVerification, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	GetAccountByAuthIdentity(ctx context.Context, arg GetAccountByAuthIdentityParams) (Account, error)
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) (OutboxEvent, error)
+	// Used before a new link is issued, so only the newest link works.
+	InvalidateEmailVerifications(ctx context.Context, accountID pgtype.UUID) error
 	ListUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]OutboxEvent, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) error
 	MarkOutboxEventPublished(ctx context.Context, id int64) error

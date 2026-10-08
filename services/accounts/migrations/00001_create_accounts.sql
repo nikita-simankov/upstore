@@ -68,7 +68,21 @@ CREATE TABLE sessions (
 
 CREATE INDEX sessions_account_id_idx ON sessions (account_id);
 
+-- An email verification link. Only the SHA-256 hash of the token is stored. A token works once
+-- (used_at) and only until expires_at.
+CREATE TABLE email_verifications (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id  UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    token_hash  BYTEA NOT NULL UNIQUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ
+);
+
+CREATE INDEX email_verifications_account_id_idx ON email_verifications (account_id);
+
 -- +goose Down
+DROP TABLE email_verifications;
 DROP TABLE sessions;
 DROP TABLE outbox_events;
 DROP TABLE auth_identities;

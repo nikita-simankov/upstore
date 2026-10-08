@@ -121,6 +121,15 @@ type AuthIdentity struct {
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
 }
 
+type EmailVerification struct {
+	ID        pgtype.UUID        `json:"id"`
+	AccountID pgtype.UUID        `json:"account_id"`
+	TokenHash []byte             `json:"token_hash"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+}
+
 type OutboxEvent struct {
 	ID          int64              `json:"id"`
 	AggregateID pgtype.UUID        `json:"aggregate_id"`

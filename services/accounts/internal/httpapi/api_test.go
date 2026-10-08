@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"github.com/nikita-simankov/upstore/services/accounts/internal/queries"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/testdb"
 	"github.com/nikita-simankov/upstore/services/accounts/internal/tokens"
+	"github.com/nikita-simankov/upstore/services/accounts/internal/verification"
 )
 
 const (
@@ -25,8 +27,19 @@ const (
 	testPassword = "correct horse battery"
 )
 
-// newTestAPI returns a handler on the test database. Limits are generous unless a test sets its own.
-func newTestAPI(t *testing.T, cfg Config) (http.Handler, *queries.Queries) {
+// recordingMailer keeps every verification link it is asked to send.
+type recordingMailer struct {
+	links []string
+}
+
+func (m *recordingMailer) SendVerification(_ context.Context, _, link string) error {
+	m.links = append(m.links, link)
+	return nil
+}
+
+// newTestAPIFull returns a handler on the test database, the query helper, and the mailer that
+// receives verification links. Limits are generous unless a test sets its own.
+func newTestAPIFull(t *testing.T, cfg Config) (http.Handler, *queries.Queries, *recordingMailer) {
 	t.Helper()
 	pool := testdb.Pool(t)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
@@ -34,7 +47,61 @@ func newTestAPI(t *testing.T, cfg Config) (http.Handler, *queries.Queries) {
 		t.Fatalf("GenerateKey: %v", err)
 	}
 	sessions := auth.NewSessions(pool, tokens.NewIssuer(key))
-	return New(auth.NewService(pool), sessions, cfg).Routes(), queries.New(pool)
+	mailer := &recordingMailer{}
+	verify := verification.NewService(pool, mailer, "https://app.test/verify-email?token=")
+	return New(auth.NewService(pool), sessions, verify, cfg).Routes(), queries.New(pool), mailer
+}
+
+// newTestAPI returns a handler on the test database. Limits are generous unless a test sets its own.
+func newTestAPI(t *testing.T, cfg Config) (http.Handler, *queries.Queries) {
+	t.Helper()
+	h, q, _ := newTestAPIFull(t, cfg)
+	return h, q
+}
+
+// TestRegisterSendsLinkAndVerifyActivatesAccount tests the full verification path over HTTP:
+// registration emails a link, the link activates the account, and sign-in then works.
+func TestRegisterSendsLinkAndVerifyActivatesAccount(t *testing.T) {
+	h, _, mailer := newTestAPIFull(t, generousConfig())
+
+	if rec := register(h, testEmail, testPassword, "shopper"); rec.Code != http.StatusCreated {
+		t.Fatalf("register: status %d, body %s", rec.Code, rec.Body)
+	}
+	if len(mailer.links) != 1 {
+		t.Fatalf("links sent = %d, want 1", len(mailer.links))
+	}
+	token := strings.TrimPrefix(mailer.links[0], "https://app.test/verify-email?token=")
+
+	if rec := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.30:1"); rec.Code != http.StatusForbidden {
+		t.Fatalf("login before verification: status %d, want 403", rec.Code)
+	}
+	if rec := do(h, "/v1/auth/verify-email", `{"token":"`+token+`"}`, "192.0.2.30:1"); rec.Code != http.StatusOK {
+		t.Fatalf("verify-email: status %d, body %s", rec.Code, rec.Body)
+	}
+	if rec := do(h, "/v1/auth/verify-email", `{"token":"`+token+`"}`, "192.0.2.30:1"); rec.Code != http.StatusBadRequest {
+		t.Errorf("second verify with the same link: status %d, want 400", rec.Code)
+	}
+	if rec := do(h, "/v1/auth/login", `{"email":"`+testEmail+`","password":"`+testPassword+`"}`, "192.0.2.30:1"); rec.Code != http.StatusOK {
+		t.Errorf("login after verification: status %d, want 200", rec.Code)
+	}
+}
+
+// TestResendVerificationAlwaysAccepts tests that resend answers 202 for every email, and sends
+// a link only when the account is pending.
+func TestResendVerificationAlwaysAccepts(t *testing.T) {
+	h, _, mailer := newTestAPIFull(t, generousConfig())
+	register(h, testEmail, testPassword, "shopper")
+	before := len(mailer.links)
+
+	for _, email := range []string{testEmail, "nobody@mail.by"} {
+		rec := do(h, "/v1/auth/resend-verification", `{"email":"`+email+`"}`, "192.0.2.31:1")
+		if rec.Code != http.StatusAccepted {
+			t.Errorf("resend for %s: status %d, want 202", email, rec.Code)
+		}
+	}
+	if len(mailer.links) != before+1 {
+		t.Errorf("links sent by resend = %d, want exactly 1 (for the pending account)", len(mailer.links)-before)
+	}
 }
 
 // generousConfig is high enough that no test hits the limiter by accident.

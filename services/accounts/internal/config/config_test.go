@@ -21,6 +21,26 @@ func clearEnv(t *testing.T) {
 		t.Setenv(key, "")
 	}
 	t.Setenv("ACCESS_SIGNING_KEY", testSigningKey)
+	t.Setenv("RESEND_API_KEY", "re_test_only")
+	t.Setenv("MAIL_FROM", "Upstore <no-reply@upstore.test>")
+}
+
+// TestLoadRequiresMailSettingsOutsideDevelopment tests that a shared environment cannot start
+// without a Resend key and a sender address, and that development does not need them.
+func TestLoadRequiresMailSettingsOutsideDevelopment(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("ENVIRONMENT", "production")
+	t.Setenv("RESEND_API_KEY", "")
+	t.Setenv("MAIL_FROM", "")
+
+	if _, err := Load(); err == nil {
+		t.Error("production accepted without RESEND_API_KEY and MAIL_FROM")
+	}
+
+	t.Setenv("ENVIRONMENT", "development")
+	if _, err := Load(); err != nil {
+		t.Errorf("development without mail settings: %v", err)
+	}
 }
 
 // TestLoadRequiresSigningKey tests that the service refuses to start without a signing key.

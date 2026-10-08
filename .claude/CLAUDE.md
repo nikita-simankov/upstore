@@ -296,28 +296,69 @@ go test ./shared/validate -cover
 
 ---
 
-## 🔄 Next Steps
+## 🏗️ Current Work: Accounts and Profiles Services
 
-### Immediate (Next PR/Commit)
-1. **Migrate accounts service config to v2**
-   - Update `services/accounts/internal/config/config.go`
-   - Handle error return from Load()
-   - Add config validation tests
+The `users` service was split into two services, and `users` was renamed to `accounts`.
 
-2. **Create integration examples**
-   - Database URL validation
-   - Request payload validation
-   - API response validation
+### Service boundaries
+- **accounts** (`services/accounts`): credentials, sessions, security. It owns the `accounts`, `auth_identities`, `sessions`, `email_verifications`, and `outbox_events` tables. It publishes `account.created` through the outbox.
+- **profiles** (`services/profiles`): account type (seller or shopper) and profile fields. It consumes `account.created` from `profiles.account-created` and creates the profile idempotently.
+- **shared/events**: the exchange name (`upstore.events`), the routing keys, the account types, and the event payloads. Both services import it.
 
-### Short Term (This Sprint)
-1. **Audit other services** for validation needs
-2. **Document v2 in project README**
-3. **Create migration guide** for team
+### Status
+| Step | Area | State |
+|---|---|---|
+| 1 | Rename users to accounts | done |
+| 2 | Accounts schema (status, bans, auth identities) | done |
+| 3 | sqlc queries | done |
+| 4 | Outbox, relay, RabbitMQ publisher | done |
+| 5 | Profiles service and account.created handler | done |
+| 6 | Wiring: relay and consumer in `main`, per-service goose tables | done |
+| 7 | Password hashing (Argon2id) and login logic | done |
+| 8 | Security fixes from audit (enumeration, rate limits, tampered hashes, logging) | done |
+| 9 | Register and login HTTP endpoints with rate limits | done |
+| 10 | Sessions: Ed25519 access tokens, refresh rotation, logout | done |
+| 11 | Email verification: single-use links, resend, Resend mailer | done |
 
-### Medium Term (Next Sprint)
-1. **Add struct tag support** for automatic validation
-2. **Add localization** for error messages
-3. **Consider async validators** for API calls
+### Accounts HTTP API (`/v1/auth/`)
+- `POST register`: 201 with a pending account, sends a verification link. 409 if the email is taken.
+- `POST login`: 200 with tokens. 401 for any wrong credential. 403 for a banned or pending account.
+- `POST refresh`: rotates the refresh token. Reusing a rotated token revokes every session of the account.
+- `POST logout`: 204, whether or not the token was valid.
+- `POST verify-email`: consumes a link and activates the account. 400 for an invalid or expired link.
+- `POST resend-verification`: always 202, so it does not reveal whether an email is registered.
+- `GET /health`: database ping.
+
+### Security decisions
+- Access tokens are EdDSA JWTs, 15 minutes. Verification accepts only EdDSA and checks the issuer.
+- Refresh and verification tokens are random and stored only as SHA-256 hashes.
+- Locked, wrong-password, and unknown-email logins return the same error and do the same hashing work.
+- Passwords are Argon2id with 64 MiB per hash. Concurrent hashing is capped at 8. Stored hashes with other parameters are refused.
+- Rate limits are per client IP and per email. They use the TCP peer address only. Behind a proxy, the trusted proxy address must be configured first.
+- Logs contain account IDs only, never emails, passwords, or tokens.
+- Verification mail goes through Resend (`https://resend.com`) outside `development`. Startup fails without `RESEND_API_KEY` and `MAIL_FROM`.
+- In `development` only, verification links are printed to the log by `DevLogMailer`. A link is a working credential, so never run development mode in a shared environment.
+- `ACCESS_SIGNING_KEY` has no default. The compose key is dev-only.
+
+### Environment (accounts)
+`DATABASE_URL`, `RABBITMQ_URL`, `HTTP_PORT`, `GRPC_PORT`, `ENVIRONMENT`, `ACCESS_SIGNING_KEY` (base64 Ed25519 seed, required), `PUBLIC_APP_URL` (verification links point at `/verify-email`), `RESEND_API_KEY` and `MAIL_FROM` (required outside `development`; the key is a secret and is never logged).
+
+### Tests
+- Unit: `go test ./...` in `services/accounts` and `services/profiles`. Integration tests skip without their variables.
+- Database: `ACCOUNTS_TEST_DATABASE_URL` and `PROFILES_TEST_DATABASE_URL`. Apply `migrations/00001_*.sql` first. Run with `-p 1`, because packages share the database.
+- Broker: `ACCOUNTS_TEST_AMQP_URL` and `PROFILES_TEST_AMQP_URL`.
+
+### Next steps
+1. **Gateway service:** verify access tokens with the public key, route requests, and own host port 9090.
+2. **OAuth sign-in:** Google, Apple, and Telegram callbacks that create or link `auth_identities`.
+3. **Resend setup:** verify the sending domain in Resend, then set `RESEND_API_KEY` and `MAIL_FROM` in each shared environment. The Resend mailer is tested against a local server only, so the first real send is still unverified.
+4. **Profiles API:** read and update profiles.
+5. **Consumer hardening:** a retry limit and a dead-letter queue.
+6. **Full compose run:** `docker compose up` for the whole stack, which has not been run.
+7. **Open decisions:** whether `POST register` should stop revealing taken emails (409), and whether `ENVIRONMENT` uses `development/production/staging` or `dev/staging/prod`.
+
+### Security audit
+Run `/security-code-audit` before each release of the auth code. Last audit: accounts auth package, with the findings fixed above. The open findings are those in the HTTP layer, now addressed, and the register enumeration decision.
 
 ---
 

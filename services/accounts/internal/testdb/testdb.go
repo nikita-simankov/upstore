@@ -33,7 +33,7 @@ func Pool(t testing.TB) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 
-	if _, err := pool.Exec(ctx, "TRUNCATE accounts, auth_identities, outbox_events, sessions"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE accounts, auth_identities, outbox_events, sessions, email_verifications"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	return pool
