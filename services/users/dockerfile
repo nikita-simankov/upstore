@@ -30,6 +30,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM alpine:3.19 AS runtime
 
+ARG SERVICE_NAME=users
+ARG SERVICE_PATH=services/users
+ARG BUILD_VERSION=dev
+
 RUN apk add --no-cache ca-certificates tzdata
 
 RUN addgroup -S -g 1000 upstore && \
