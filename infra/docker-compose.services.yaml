@@ -15,8 +15,8 @@ services:
 
     environment:
       ENVIRONMENT: development
-      HTTP_PORT: ":9091"
-      GRPC_PORT: ":50051"
+      HTTP_PORT: "9090"
+      GRPC_PORT: "50051"
       REDIS_URL: "redis://valkey:6379"
       RABBITMQ_URL: "amqp://upstore:dev_only_password@rabbitmq:5672/"
       DATABASE_URL: "postgres://upstore_app:upstore_owner_pass@postgres:5432/upstore?sslmode=disable"
