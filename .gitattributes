@@ -1,0 +1,9 @@
+# GitHub language statistics: count hand-written Go only.
+
+# Generated code is excluded from language statistics.
+proto/generated/** linguist-generated=true
+services/users/internal/queries/** linguist-generated=true
+
+# Build and SQL files are not Go, so leave them out of the statistics.
+Makefile linguist-detectable=false
+*.sql linguist-detectable=false

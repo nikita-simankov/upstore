@@ -1,4 +1,4 @@
-.PHONY: proto sqlc-generate
+.PHONY: proto sqlc-generate migrate-up migrate-down
 
 DOCKER_NETWORK_NAME := upstore
 DOCKER_COMPOSE_INFRA := docker compose -f infra/docker-compose.infra.yaml
@@ -49,3 +49,12 @@ sqlc-generate:
 	@echo "[make:sqlc-generate] Generating database code..."
 	sqlc generate -f services/users/sqlc.yaml
 	@echo "[make:sqlc-generate] Database code generation complete"
+
+
+USERS_DATABASE_URL ?= postgres://upstore_owner:upstore_owner_pass@127.0.0.1:5432/upstore?sslmode=disable
+
+migrate-up:
+	goose -dir services/users/migrations postgres "$(USERS_DATABASE_URL)" up
+
+migrate-down:
+	goose -dir services/users/migrations postgres "$(USERS_DATABASE_URL)" down
