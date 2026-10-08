@@ -16,7 +16,10 @@ type Querier interface {
 	GetAccountByAuthIdentity(ctx context.Context, arg GetAccountByAuthIdentityParams) (Account, error)
 	GetAccountByEmail(ctx context.Context, lower string) (Account, error)
 	GetAccountByID(ctx context.Context, id pgtype.UUID) (Account, error)
+	InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) (OutboxEvent, error)
+	ListUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]OutboxEvent, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) error
+	MarkOutboxEventPublished(ctx context.Context, id int64) error
 	RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) error
 	RecordSuccessfulLogin(ctx context.Context, id pgtype.UUID) error
 	SetAccountBan(ctx context.Context, arg SetAccountBanParams) error

@@ -41,7 +41,21 @@ CREATE TABLE auth_identities (
     CONSTRAINT auth_identities_account_provider_key UNIQUE (account_id, provider)
 );
 
+-- Events are written in the same transaction as the change they describe, then
+-- published to RabbitMQ by the relay. published_at stays NULL until the broker confirms.
+CREATE TABLE outbox_events (
+    id           BIGSERIAL PRIMARY KEY,
+    aggregate_id UUID NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at TIMESTAMPTZ
+);
+
+CREATE INDEX outbox_events_unpublished_idx ON outbox_events (id) WHERE published_at IS NULL;
+
 -- +goose Down
+DROP TABLE outbox_events;
 DROP TABLE auth_identities;
 DROP TABLE accounts;
 DROP TYPE auth_provider;

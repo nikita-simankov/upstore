@@ -120,3 +120,12 @@ type AuthIdentity struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
 }
+
+type OutboxEvent struct {
+	ID          int64              `json:"id"`
+	AggregateID pgtype.UUID        `json:"aggregate_id"`
+	EventType   string             `json:"event_type"`
+	Payload     []byte             `json:"payload"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+}
