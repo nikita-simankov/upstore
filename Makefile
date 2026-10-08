@@ -1,4 +1,4 @@
-.PHONY: proto
+.PHONY: proto sqlc-generate
 
 DOCKER_NETWORK_NAME := upstore
 DOCKER_COMPOSE_INFRA := docker compose -f infra/docker-compose.infra.yaml
@@ -44,3 +44,8 @@ compose-services-logs:
 
 compose-services-build:
 	$(DOCKER_COMPOSE_SERVICES) build
+
+sqlc-generate:
+	@echo "[make:sqlc-generate] Generating database code..."
+	sqlc generate -f services/users/sqlc.yaml
+	@echo "[make:sqlc-generate] Database code generation complete"
