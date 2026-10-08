@@ -170,22 +170,45 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const recordFailedLogin = `-- name: RecordFailedLogin :exec
+const recordFailedLogin = `-- name: RecordFailedLogin :one
 UPDATE accounts
 SET failed_login_attempts = failed_login_attempts + 1,
-    locked_until = $2,
+    locked_until = CASE
+        WHEN failed_login_attempts + 1 >= $1::integer
+        THEN $2::timestamptz
+        ELSE locked_until
+    END,
     updated_at = now()
-WHERE id = $1
+WHERE id = $3
+RETURNING id, email, password_hash, status, email_verified_at, failed_login_attempts, locked_until, banned_until, ban_reason, last_login_at, created_at, updated_at
 `
 
 type RecordFailedLoginParams struct {
+	MaxAttempts int32              `json:"max_attempts"`
+	LockUntil   pgtype.Timestamptz `json:"lock_until"`
 	ID          pgtype.UUID        `json:"id"`
-	LockedUntil pgtype.Timestamptz `json:"locked_until"`
 }
 
-func (q *Queries) RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) error {
-	_, err := q.db.Exec(ctx, recordFailedLogin, arg.ID, arg.LockedUntil)
-	return err
+// The lock is decided in the same statement that increments the counter, so concurrent
+// failures cannot each read a stale count and skip the lock.
+func (q *Queries) RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (Account, error) {
+	row := q.db.QueryRow(ctx, recordFailedLogin, arg.MaxAttempts, arg.LockUntil, arg.ID)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.FailedLoginAttempts,
+		&i.LockedUntil,
+		&i.BannedUntil,
+		&i.BanReason,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const recordSuccessfulLogin = `-- name: RecordSuccessfulLogin :exec

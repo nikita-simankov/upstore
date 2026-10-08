@@ -24,12 +24,19 @@ SET status = $2,
     updated_at = now()
 WHERE id = $1;
 
--- name: RecordFailedLogin :exec
+-- name: RecordFailedLogin :one
+-- The lock is decided in the same statement that increments the counter, so concurrent
+-- failures cannot each read a stale count and skip the lock.
 UPDATE accounts
 SET failed_login_attempts = failed_login_attempts + 1,
-    locked_until = $2,
+    locked_until = CASE
+        WHEN failed_login_attempts + 1 >= sqlc.arg(max_attempts)::integer
+        THEN sqlc.arg(lock_until)::timestamptz
+        ELSE locked_until
+    END,
     updated_at = now()
-WHERE id = $1;
+WHERE id = sqlc.arg(id)
+RETURNING *;
 
 -- name: RecordSuccessfulLogin :exec
 UPDATE accounts

@@ -20,7 +20,9 @@ type Querier interface {
 	ListUnpublishedOutboxEvents(ctx context.Context, limit int32) ([]OutboxEvent, error)
 	MarkEmailVerified(ctx context.Context, id pgtype.UUID) error
 	MarkOutboxEventPublished(ctx context.Context, id int64) error
-	RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) error
+	// The lock is decided in the same statement that increments the counter, so concurrent
+	// failures cannot each read a stale count and skip the lock.
+	RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (Account, error)
 	RecordSuccessfulLogin(ctx context.Context, id pgtype.UUID) error
 	SetAccountBan(ctx context.Context, arg SetAccountBanParams) error
 	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) error

@@ -117,7 +117,11 @@ func TestLoginCounters(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		if err := q.RecordFailedLogin(ctx, RecordFailedLoginParams{ID: created.ID}); err != nil {
+		if _, err := q.RecordFailedLogin(ctx, RecordFailedLoginParams{
+			ID:          created.ID,
+			MaxAttempts: 5,
+			LockUntil:   pgtype.Timestamptz{Time: time.Now().Add(time.Minute), Valid: true},
+		}); err != nil {
 			t.Fatalf("RecordFailedLogin: %v", err)
 		}
 	}
